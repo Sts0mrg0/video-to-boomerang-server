@@ -1,0 +1,42 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: docker:17.04.0-ce
+    environment:
+      ENV_FILE: /app/circleci.env
+    working_directory: /app
+    steps:
+      - checkout
+
+      - setup_remote_docker
+
+      - run:
+          name: Setup Docker
+          command: |
+            [[ -f "$ENV_FILE" ]] && . $ENV_FILE
+            docker login -u "$DOCKER_USER" -p "$DOCKER_PASSWORD"
+
+      - run:
+          name: Install Dependencies
+          command: |
+            docker build -t builder -f Dockerfile.build .
+            # TODO: Ensure vendors are up to date
+
+      #- run:
+      #    name: Test
+      #    command: |
+      #      docker run --rm --entrypoint="" builder /bin/sh -c 'go test -v -race $(go list ./... | grep -v /vendor/)'
+
+      - run:
+          name: Build Application
+          command: |
+            trap "docker rm builder || true; rm main || true" EXIT
+            docker run --name="builder" --entrypoint="" builder go build -o main
+            docker cp builder:/go/src/app/main main
+            docker build -t seriousben/video-to-boomerang-server:${CIRCLE_BUILD_NUM:-latest} -f Dockerfile .
+
+      - run:
+          name: Push
+          command: |
+            docker push seriousben/video-to-boomerang-server:${CIRCLE_BUILD_NUM}
